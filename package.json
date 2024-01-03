@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "@pokt-foundation/pocketjs-provider": "^2.1.3",
+    "@pokt-foundation/pocketjs-signer": "^2.1.3",
+    "@pokt-foundation/pocketjs-transaction-builder": "^2.1.3",
+    "csv-parse": "^5.5.0",
+    "dotenv": "^16.3.1"
+  },
+  "name": "simpleStake",
+  "version": "1.0.0",
+  "main": "simpleStake.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.8.2"
+  }
+}
