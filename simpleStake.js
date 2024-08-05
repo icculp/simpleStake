@@ -6,6 +6,9 @@ const { parse } = require('csv-parse');
 const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
+const axios = require('axios');
+const retry = require('async-retry');
+
 
 // load env variables
 require('dotenv').config();
@@ -21,6 +24,7 @@ const KEYFILE_PATH = path.join(__dirname, SENDER_KEYFILE);
 const PROVIDER = new JsonRpcProvider({ rpcUrl: POKT_URL });
 const CSV_FILE_PATH = path.join(__dirname, NODES_FILE);
 const RATE_LIMITED = process.env.RATE_LIMITED || false;
+const NEW_OUTPUT_ADDRESS = process.env.NEW_OUTPUT_ADDRESS ? JSON.parse(JSON.stringify(process.env.NEW_OUTPUT_ADDRESS)) : null;
 
 
 function logToFile(message) {
@@ -83,25 +87,66 @@ async function loadSigner() {
   }
 }
 
-async function stakeNode(nodeDetails, signer) {
+async function getNodeDetails(address) {
   try {
-    const outputAddress = await signer.getAddress();
+    return await retry(async bail => {
+      const node = await axios.post(POKT_URL + '/v1/query/node', {
+        address: address
+        }, {
+        headers: {
+          //'Authorization': `Basic ${Buffer.from(user + ':' + password, "binary").toString("base64")}`,
+          'accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      logToFile('Existing node details: ' + JSON.stringify(node.data));
+      return node.data;
+    }, {
+      retries: 2,
+      factor: 1.2, // Exponential backoff factor
+      minTimeout: 300, // The number of milliseconds before starting the first retry
+      maxTimeout: Infinity, // The maximum number of milliseconds between two retries
+      randomize: true, // Randomizes the timeouts by multiplying with a factor between 1 to 2
+    })
+  } catch (e) {
+    logToFile(`failed to get node details for node ${address}: ${e}`);
+    //throw e
+  }
+}
+
+async function stakeNode(nodeDetails, signer) {
+  let existingNodeDetails;
+  try {
+    existingNodeDetails = await getNodeDetails(nodeDetails.Address);
+  } catch (error) {
+    logToFile(`Error getting node details for address ${nodeDetails.Address}: ${error}`);
+    return { error: error, nodeAddress: nodeDetails.Address };
+  }
+  try {
+    const outputAddress = NEW_OUTPUT_ADDRESS ? NEW_OUTPUT_ADDRESS : await signer.getAddress();
     const transactionBuilder = new TransactionBuilder({
       chainID: "mainnet",
       provider: PROVIDER,
       signer: signer,
     });
     logToFile(`Staking node with pubkey: ${nodeDetails.Pubkey}, address: ${nodeDetails.Address}, output address: ${outputAddress}, amount: ${AMOUNT}`);
-    const tx = transactionBuilder.nodeStake({
+    let nodeToStake = {
       nodePubKey: nodeDetails.Pubkey,
       outputAddress: outputAddress,
-      chains: ['0021'],
+      chains: existingNodeDetails.chains ? existingNodeDetails.chains : ['0021'],
       amount: AMOUNT,
-      serviceURL: new URL(nodeDetails.URI)
-    });
+      serviceURL: existingNodeDetails.service_url ? new URL(existingNodeDetails.service_url) : nodeDetails.URI ? new URL(nodeDetails.URI) : new URL('https://parked.com'),
+    }
+    
+    if (existingNodeDetails.reward_delegators && Object.keys(existingNodeDetails.reward_delegators).length > 0) {
+      logToFile(`Node ${nodeDetails.Address} has reward delegators: ${existingNodeDetails.reward_delegators}`);
+      nodeToStake = {...nodeToStake, rewardDelegators: existingNodeDetails.reward_delegators}
+    }
+
+    const tx = transactionBuilder.nodeStake(nodeToStake);
     logToFile('Prepared Transaction: ' + JSON.stringify(tx))
     const txresponse = await transactionBuilder.submit({
-      memo: "cryptonode.tools nodeStake",
+      memo: "cryptonode.tools simpleStake",
       txMsg: tx,
     });
     logToFile('Stake tx: ' + txresponse.txHash + ' for node: ' + nodeDetails.Address);
