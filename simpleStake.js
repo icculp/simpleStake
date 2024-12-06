@@ -133,12 +133,12 @@ async function stakeNode(nodeDetails, signer) {
     let nodeToStake = {
       nodePubKey: nodeDetails.Pubkey,
       outputAddress: outputAddress,
-      chains: existingNodeDetails.chains ? existingNodeDetails.chains : ['0021'],
+      chains: existingNodeDetails?.chains ? existingNodeDetails.chains : ['0021'],
       amount: AMOUNT,
-      serviceURL: existingNodeDetails.service_url ? new URL(existingNodeDetails.service_url) : nodeDetails.URI ? new URL(nodeDetails.URI) : new URL('https://parked.com'),
+      serviceURL: existingNodeDetails?.service_url ? new URL(existingNodeDetails.service_url) : nodeDetails.URI ? new URL(nodeDetails.URI) : new URL('https://parked.com'),
     }
     
-    if (existingNodeDetails.reward_delegators && Object.keys(existingNodeDetails.reward_delegators).length > 0) {
+    if (existingNodeDetails?.reward_delegators && Object.keys(existingNodeDetails.reward_delegators).length > 0) {
       logToFile(`Node ${nodeDetails.Address} has reward delegators: ${existingNodeDetails.reward_delegators}`);
       nodeToStake = {...nodeToStake, rewardDelegators: existingNodeDetails.reward_delegators}
     }
